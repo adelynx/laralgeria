@@ -31,9 +31,12 @@ cd laralgeria
 ./conductor install
 ```
 
-_**IMPORTANT:** The installation might take longer it depends on your connection speed_
+_**IMPORTANT:**_
 
-### Set up
+ - The installation might take longer it depends on your connection speed
+ - For Windows users it's the `./conductor` file work only under `Windows Subsystem for Linux (WSL)`
+
+### Setting up
 
 Make sure that you don't have anything running on port 80 if you want to use the `port 80` (That includes Skype)
 
