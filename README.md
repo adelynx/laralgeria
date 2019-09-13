@@ -8,7 +8,7 @@
 - Laravel 6
 
 ### Database Server (laralgeria-db)  
-- Debian 9
+- Debian 9 (Stretch)
 - MySQL v8.0.17
 
 ## Installation Requirements
