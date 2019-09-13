@@ -34,7 +34,7 @@ cd laralgeria
 _**IMPORTANT:**_
 
  - The installation might take longer it depends on your connection speed
- - For Windows users it's the `./conductor` file work only under `Windows Subsystem for Linux (WSL)`
+ - For Windows users the `./conductor` file works only under `Windows Subsystem for Linux (WSL)`
 
 ### Setting up
 
