@@ -1,0 +1,2 @@
+0 0 * * *   root        /usr/local/bin/cron_task letsencrypt_renew
+30 */6 * * *   root     /usr/local/bin/temp_cleanup

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+
+if [[ `whoami` != 'laralgeria' ]]; then
+    echo 'This script must be run as the "laralgeria" user. Rerunning...'
+    sudo -E -u laralgeria letsencrypt_uninstall $@
+    exit 1
+fi
+
+SSL_DIR="/etc/letsencrypt"
+
+cd ${SSL_DIR}
+rm ssl.crt ssl.key
+
+openssl req -new -nodes -x509 -subj "/C=GB/ST=London/L=London/O=Adel Kedjour/CN=laralgeria.local" \
+    -days 365 -extensions v3_ca \
+    -keyout ${SSL_DIR}/selfsigned.key \
+	-out ${SSL_DIR}/selfsigned.crt
+
+ln -s selfsigned.key ssl.key
+ln -s selfsigned.crt ssl.crt
+
+sudo kill -HUP `sudo cat /var/run/nginx.pid`
+
+echo "Self-signed certificate restored."
+exit

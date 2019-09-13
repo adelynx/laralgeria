@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+
+DB_FILE="./docker-containers/laralgeria-db/db.sql"
+
+touch ${DB_FILE}
+
+cat >${DB_FILE}<<EOL
+CREATE DATABASE IF NOT EXISTS \`laralgeria_testing\`;
+
+CREATE USER IF NOT EXISTS 'laralgeria_tester'@'%' IDENTIFIED WITH mysql_native_password BY '${MYSQL_PASSWORD}';
+
+GRANT ALL PRIVILEGES ON laralgeria_testing.* TO 'laralgeria_tester'@'%' WITH GRANT OPTION;
+EOL

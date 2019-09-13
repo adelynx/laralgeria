@@ -1,0 +1,317 @@
+#!/usr/bin/env bash
+
+set -o allexport
+  source ./laralgeria.env
+set +o allexport
+
+# This is a general-purpose function to ask Yes/No questions in Bash, either
+# with or without a default answer. It keeps repeating the question until it
+# gets a valid answer.
+ask() {
+    local prompt default reply
+
+    while true; do
+
+        if [[ "${2:-}" = "Y" ]]; then
+            prompt="Y/n"
+            default=Y
+        elif [[ "${2:-}" = "N" ]]; then
+            prompt="y/N"
+            default=N
+        else
+            prompt="y/n"
+            default=
+        fi
+
+        # Ask the question (not using "read -p" as it uses stderr not stdout)
+        echo -n "$1 [$prompt] "
+
+        read reply
+
+        # Default?
+        if [[ -z "$reply" ]]; then
+            reply=${default}
+        fi
+
+        # Check if the reply is valid
+        case "$reply" in
+            Y*|y*) return 0 ;;
+            N*|n*) return 1 ;;
+        esac
+
+    done
+}
+
+#
+# Run the initial installer of Docker and laralgeria.
+# Usage: ./conductor install
+#
+install() {
+    if [[ $(which docker) && $(docker --version) ]]; then
+        echo "Docker is already installed! Continuing..."
+    else
+        if ask "Docker does not appear to be installed. Install Docker now?" Y; then
+            curl -fsSL get.docker.com -o get-docker.sh
+            sh get-docker.sh
+            rm get-docker.sh
+
+            if [[ $EUID -ne 0 ]]; then
+                sudo usermod -aG docker `whoami`
+
+                echo "You must log out or restart to apply necessary Docker permissions changes."
+                echo "Restart, then continue installing using this script."
+                exit
+            fi
+        fi
+    fi
+
+    if [[ $(which docker-compose) && $(docker-compose --version) ]]; then
+        echo "Docker Compose is already installed! Continuing..."
+    else
+        if ask "Docker Compose does not appear to be installed. Install Docker Compose now?" Y; then
+            if [[ ! $(which git) ]]; then
+                echo "Git does not appear to be installed."
+                echo "Install git using your host's package manager,"
+                echo "then continue installing using this script."
+                exit 1
+            fi
+
+            if [[ ! $(which curl) ]]; then
+                echo "cURL does not appear to be installed."
+                echo "Install curl using your host's package manager,"
+                echo "then continue installing using this script."
+                exit 1
+            fi
+
+            COMPOSE_VERSION=`git ls-remote https://github.com/docker/compose | grep refs/tags | grep -oP "[0-9]+\.[0-9][0-9]+\.[0-9]+$" | tail -n 1`
+            sudo sh -c "curl -L https://github.com/docker/compose/releases/download/${COMPOSE_VERSION}/docker-compose-`uname -s`-`uname -m` > /usr/local/bin/docker-compose"
+            sudo chmod +x /usr/local/bin/docker-compose
+            sudo sh -c "curl -L https://raw.githubusercontent.com/docker/compose/${COMPOSE_VERSION}/contrib/completion/bash/docker-compose > /etc/bash_completion.d/docker-compose"
+        fi
+    fi
+
+    check_composer_is_installed
+
+    generate_db
+    [[ -d ${APP_FOLDER_NAME} ]] || mkdir ${APP_FOLDER_NAME}
+    docker-compose pull
+    docker-compose up -d
+    composer_install
+    cleanup
+}
+
+#
+# Build the Docker containers from your local copies.
+# Usage: ./conductor build
+#
+build() {
+    generate_db
+    docker-compose build
+    docker-compose up -d
+    composer_install
+    cleanup
+}
+
+rebuild() {
+    printf "Rebuilding your docker environment...\n"
+    printf "Killing all the containers...\n"
+    docker-compose kill
+    printf "Rebuilding and restarting all the containers...\n"
+    build
+}
+
+#
+# Enter the bash terminal of the running web container.
+# Usage: ./conductor bash
+#
+bash() {
+    printf "Opening a bash connection into your dev container...\n"
+    docker exec -it ${1:-} bash
+}
+
+#
+# Enter the ssh terminal of the running web container.
+# Usage: ./conductor ssh
+#
+ssh() {
+    printf "Opening a bash connection into your dev container...\n"
+    docker exec -e COLUMNS="`tput cols`" -e LINES="`tput lines`" -ti laralgeria_web_v1 bash
+}
+
+#
+# The log command will show you the output a container is generating when you don't run it interactively.
+# This is likely to include the error message
+# Usage: ./conductor log <container_name>
+#
+log() {
+    if [[ $1 == "web" ]] ; then
+        printf "Opening a bash connection into your web dev container...\n"
+        docker logs --tail 50 --follow --timestamps laralgeria_web_v1
+        exit 1
+    fi
+
+    if [[ $1 == "db" ]] ; then
+        printf "Opening a bash connection into your db dev container...\n"
+        docker logs --tail 50 --follow --timestamps laralgeria_db_v1
+        exit 1
+    fi
+
+    printf "Opening a bash connection into your dev container...\n"
+    docker logs --tail 50 --follow --timestamps ${1:-}
+}
+
+#
+# Stop all Docker containers and remove related volumes.
+# Usage: ./conductor uninstall
+#
+uninstall() {
+    if ask "This operation is destructive and will wipe your existing Docker containers. Continue?" N; then
+        stop
+        docker-compose down -v
+        docker-compose rm -f
+        docker volume prune -f
+        docker rmi -f laralgeria-radio_web
+        docker rmi -f laralgeria-radio_stations
+        docker rmi -f laralgeria-radio_db
+        docker rmi -f mysql:8.0.16
+        docker rmi -f $(docker images | grep "^<none>" | awk "{print $3}")
+
+        echo "All laralgeria Docker containers, volumes and images were removed."
+        echo "To remove *all* Docker containers and volumes, run:"
+        echo "docker stop \$(docker ps -a -q)"
+        echo "docker rm \$(docker ps -a -q)"
+        echo "docker volume prune -f"
+        echo ""
+    fi
+}
+
+if [[ $1 == "setup" ]] ; then
+    printf "Setting up an initial environment for you...\n"
+    docker exec -i -t laralgeria_web_v1 /bin/bash
+    exit 1
+fi
+
+if [[ $1 == "cp-stations-conf" ]] ; then
+    printf "Copy files or folders from a container to the host ...\n"
+    docker cp laralgeria_web_v1:${2:-} ${3:-}
+    exit 1
+fi
+
+#
+# Create and link a LetsEncrypt SSL certificate.
+# Usage: ./conductor letsencrypt-create domainname.example.com
+#
+letsencrypt-create() {
+    docker-compose exec --user="laralgeria" web letsencrypt_connect $*
+}
+
+#
+# Renew an existing LetsEncrypt SSL certificate
+# Usage: ./conductor letsencrypt-renew
+#
+letsencrypt-renew() {
+    docker-compose exec --user="laralgeria" web letsencrypt_renew $*
+}
+
+#
+# Start all Docker containers
+# Usage: ./conductor start
+#
+start() {
+    printf "Starting containers...\n"
+    docker-compose up -d
+}
+
+#
+# Stop all Docker containers.
+# Usage: ./conductor stop
+#
+stop() {
+    printf "Shutting down containers...\n"
+    docker-compose kill
+}
+
+#
+# Restart all Docker containers.
+# Usage: ./conductor restart
+#
+restart() {
+    printf "Restarting containers...\n"
+    docker-compose kill
+    docker-compose up -d
+}
+
+unitest() {
+  dockerexec laralgeria_web_v1 "vendor/bin/phpunit $1 --order-by=defects --stop-on-defect --colors=always"
+}
+
+#
+# Migrate all the migration files.
+# Usage: ./conductor migrate
+#
+migrate() {
+    echo "🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹"
+      echo -e "⌛  \033[34mDevelopment environment: \033[0m\033[93m \033[93mStart migrating all migrations...\033[0m"
+      echo "🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹"
+
+      docker exec -it laralgeria_web_v1 php artisan migrate
+}
+
+function generate_db() {
+  printf "Generating database file...\n"
+  ./docker-containers/scripts/generate_db
+}
+
+function composer_install() {
+  printf "Installing Laravel...\n"
+  composer install --working-dir=$PWD/${APP_FOLDER_NAME}
+}
+
+function cleanup() {
+  printf "Cleanup: deleting unnecessary files used for installation...\n"
+  rm -rf ./docker-containers/laralgeria-db/db.sql
+  alert_success
+}
+
+function check_composer_is_installed() {
+    # Check if PHP is installed
+    php -v > /dev/null 2>&1
+    PHP_IS_INSTALLED=$?
+
+    [[ ${PHP_IS_INSTALLED} -ne 0 ]] && { printf "!!! PHP is not installed.\n    Installing Composer aborted!\n"; exit 0; }
+
+    # Check if Composer is installed
+    composer -v > /dev/null 2>&1
+    COMPOSER_IS_INSTALLED=$?
+
+    if [[ ${COMPOSER_IS_INSTALLED} -ne 0 ]]; then
+        if ask "Composer does not appear to be installed. Install Composer now?" Y; then
+            if [[ ! $(which curl) ]]; then
+                echo "cURL does not appear to be installed."
+                echo "Install curl using your host's package manager,"
+                echo "then continue installing using this script."
+                exit 1
+            fi
+
+            curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+        fi
+    else
+        echo "Composer is already installed! Continuing..."
+    fi
+
+}
+
+function alert_success() {
+    echo "🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹"
+    echo -e "🎸🎸🎸 \033[34mTara:\033[0m\033[93m \033[93mYou are all set now\033[0m 🎸🎸🎸"
+    echo "🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹"
+    echo -e "⚠️  \033[93mPlease don't forget to add \033[31mlaralgeria.local\033[0m\033[93m \033[93min your local hosts.\033[0m️"
+}
+
+function dockerexec {
+    : ${1? First parameter required}
+    : ${2? Second parameter required}
+    docker exec $1 bash -c "TERM=xterm-256color $2"
+}
+
+$*

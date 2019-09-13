@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+
+cat $1 | mysql -u${MYSQL_USER} -p${MYSQL_PASSWORD} -D ${MYSQL_DATABASE}
+cat $1 | mysql -u${MYSQL_USER} -p${MYSQL_PASSWORD} -D laralgeria_testing
