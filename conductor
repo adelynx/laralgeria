@@ -302,10 +302,10 @@ function check_composer_is_installed() {
 }
 
 function alert_success() {
-    echo "🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹"
-    echo -e "🎸🎸🎸 \033[34mTara:\033[0m\033[93m \033[93mYou are all set now\033[0m 🎸🎸🎸"
-    echo "🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹🎹"
-    echo -e "⚠️  \033[93mPlease don't forget to add \033[31mlaralgeria.local\033[0m\033[93m \033[93min your local hosts.\033[0m️"
+    echo "🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉"
+    echo -e "🎉 \033[34mWell done!\033[0m\033[93m \033[93mYour environment is ready to run!\033[0m 🎉"
+    echo "🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉🎉"
+    echo -e "⚠️ ⚠️ ⚠️  \033[93mPlease don't forget to add \033[31mlaralgeria.local\033[0m\033[93m \033[93min your local hosts.\033[0m️ ⚠️ ⚠️ ⚠️"
 }
 
 function dockerexec {
